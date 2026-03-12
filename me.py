@@ -15,6 +15,8 @@ import yt_dlp
 last_speech_time = 0
 spotify_muted = False
 SILENCE_DELAY = 2
+song_queue = []
+is_playing = False
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -30,6 +32,7 @@ ffmpeg_options = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
     "options": "-vn"
 }
+
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -92,7 +95,7 @@ async def join(ctx):
 
         vc = await channel.connect(cls=voice_recv.VoiceRecvClient)
 
-        await ctx.send(f"Joined {channel.name}")
+        await ctx(f"Joined {channel.name}")
 
     else:
         await ctx.send("You are not in a voice channel.")
@@ -204,6 +207,8 @@ async def clear(ctx, amount: int):
 @bot.command()
 async def jarvis_play(ctx, *, query):
 
+    global is_playing
+
     if not ctx.author.voice:
         await ctx.send("You must be in a voice channel.")
         return
@@ -214,7 +219,9 @@ async def jarvis_play(ctx, *, query):
     vc = ctx.voice_client
 
     try:
-        info = ytdl.extract_info(query, download=False)
+
+        loop = asyncio.get_event_loop()
+        info = await loop.run_in_executor(None, lambda: ytdl.extract_info(query, download=False))
 
         if "entries" in info:
             info = info["entries"][0]
@@ -222,13 +229,37 @@ async def jarvis_play(ctx, *, query):
         url = info["url"]
         title = info["title"]
 
-        vc.stop()
-        vc.play(discord.FFmpegPCMAudio(url, **ffmpeg_options))
+        song_queue.append((url, title))
 
-        await ctx.send(f"Playing: {title}")
+        await ctx.send(f"Added to queue: {title}")
+
+        if not is_playing:
+            await play_next(ctx)
 
     except Exception as e:
         await ctx.send("Error playing the song.")
         print(e)
         
+async def play_next(ctx):
+
+    global is_playing
+
+    if len(song_queue) > 0:
+
+        is_playing = True
+
+        url, title = song_queue.pop(0)
+
+        vc = ctx.voice_client
+
+        vc.play(
+            discord.FFmpegPCMAudio(url, **ffmpeg_options),
+            after=lambda e: asyncio.run_coroutine_threadsafe(play_next(ctx), bot.loop)
+        )
+
+        await ctx.send(f"Now playing: {title}")
+
+    else:
+        is_playing = False     
+           
 bot.run(BOT_TOKEN)
