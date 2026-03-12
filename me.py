@@ -8,7 +8,7 @@ import time
 from datetime import timedelta
 import asyncio
 import yt_dlp
-
+import random
 
 
 
@@ -16,6 +16,8 @@ last_speech_time = 0
 spotify_muted = False
 SILENCE_DELAY = 2
 song_queue = []
+global listening
+listening = False
 is_playing = False
 
 load_dotenv()
@@ -24,8 +26,14 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 ytdl = yt_dlp.YoutubeDL({
     "format": "bestaudio/best",
     "quiet": True,
+    "no_warnings": True,
     "noplaylist": True,
-    "default_search": "ytsearch"
+    "default_search": "ytsearch",
+    "extractor_args": {
+        "youtube": {
+            "player_client": ["android", "web"]
+        }
+    }
 })
 
 ffmpeg_options = {
@@ -257,7 +265,6 @@ async def jarvis_skip(ctx):
 
     await ctx.send("Skipped the current song.")
             
-@bot.command()        
 async def play_next(ctx):
 
     global is_playing
@@ -266,23 +273,92 @@ async def play_next(ctx):
 
     if not vc:
         return
+
     if vc.is_playing():
         return
 
-    if len(song_queue) > 0:
+    if len(song_queue) == 0:
+        is_playing = False
+        return
 
-        is_playing = True
+    is_playing = True
 
-        url, title = song_queue.pop(0)
+    url, title = song_queue.pop(0)
 
-        vc.play(
-            discord.FFmpegPCMAudio(url, **ffmpeg_options),
-            after=lambda e: asyncio.run_coroutine_threadsafe(play_next(ctx), bot.loop)
+    try:
+
+        loop = asyncio.get_event_loop()
+
+        data = await loop.run_in_executor(
+            None,
+            lambda: ytdl.extract_info(url, download=False)
         )
 
-        await ctx.send(f"Now playing: {title}")
+        if "entries" in data:
+            data = data["entries"][0]
 
-    else:
-        is_playing = False 
+        stream_url = data["url"]
+
+        source = discord.FFmpegPCMAudio(stream_url, **ffmpeg_options)
+
+        vc.play(
+            source,
+            after=lambda e: asyncio.run_coroutine_threadsafe(
+                play_next(ctx),
+                bot.loop
+            )
+        )
+
+        await ctx.send(f"Now playing: **{title}**")
+
+    except Exception as e:
+
+        print("Playback error:", e)
+
+        await ctx.send("Skipping broken video...")
+
+        await play_next(ctx)
            
+@bot.command()
+async def jarvis_peak(ctx):
+
+    global is_playing
+
+    if not ctx.author.voice:
+        await ctx.send("You must be in a voice channel.")
+        return
+
+    if ctx.voice_client is None:
+        await ctx.author.voice.channel.connect()
+
+    vc = ctx.voice_client
+
+    try:
+        loop = asyncio.get_event_loop()
+
+        # Search videos from the channel
+        info = await loop.run_in_executor(
+            None,
+            lambda: ytdl.extract_info(
+                "ytsearch50:mo.mmyASMR",
+                download=False
+            )
+        )
+
+        videos = info["entries"]
+        video = random.choice(videos)
+
+        url = f"https://www.youtube.com/watch?v={video['id']}"
+        title = video["title"]
+
+        song_queue.append((url, title))
+
+        await ctx.send(f"Jarvis found peak: **{title}**")
+
+        if not is_playing:
+            await play_next(ctx)
+
+    except Exception as e:
+        print(e)
+        await ctx.send("Jarvis failed to find a video.")
 bot.run(BOT_TOKEN)
