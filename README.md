@@ -4,3 +4,8 @@
 !stop_listen to stop listening to the vc
 !mute_spotify mutes spotify 
 !umute_spotify to unmute 
+
+
+
+
+IMPORTANT u need to make and .env file with your discord bot token saved as BOT_TOKEN="  "
