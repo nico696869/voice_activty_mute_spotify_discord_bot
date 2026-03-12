@@ -7,6 +7,9 @@ from discord.ext import voice_recv
 import time
 from datetime import timedelta
 import asyncio
+import yt_dlp
+
+
 
 
 last_speech_time = 0
@@ -15,6 +18,18 @@ SILENCE_DELAY = 2
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+ytdl = yt_dlp.YoutubeDL({
+    "format": "bestaudio/best",
+    "quiet": True,
+    "noplaylist": True,
+    "default_search": "ytsearch"
+})
+
+ffmpeg_options = {
+    "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
+    "options": "-vn"
+}
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -116,6 +131,11 @@ async def stop_listen(ctx):
 
     global listening
 
+    vc = ctx.voice_client
+
+    if vc:
+        vc.stop_listening()
+
     listening = False
 
     spotify_mute.mute_spotify(False)
@@ -181,5 +201,34 @@ async def clear(ctx, amount: int):
     msg = await ctx.send(f"Cleared {amount} messages.")
     await msg.delete(delay=5)
         
-              
+@bot.command()
+async def jarvis_play(ctx, *, query):
+
+    if not ctx.author.voice:
+        await ctx.send("You must be in a voice channel.")
+        return
+
+    if ctx.voice_client is None:
+        await ctx.author.voice.channel.connect()
+
+    vc = ctx.voice_client
+
+    try:
+        info = ytdl.extract_info(query, download=False)
+
+        if "entries" in info:
+            info = info["entries"][0]
+
+        url = info["url"]
+        title = info["title"]
+
+        vc.stop()
+        vc.play(discord.FFmpegPCMAudio(url, **ffmpeg_options))
+
+        await ctx.send(f"Playing: {title}")
+
+    except Exception as e:
+        await ctx.send("Error playing the song.")
+        print(e)
+        
 bot.run(BOT_TOKEN)
