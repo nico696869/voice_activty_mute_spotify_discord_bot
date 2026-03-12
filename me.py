@@ -95,7 +95,7 @@ async def join(ctx):
 
         vc = await channel.connect(cls=voice_recv.VoiceRecvClient)
 
-        await ctx(f"Joined {channel.name}")
+        await ctx.send(f"Joined {channel.name}")
 
     else:
         await ctx.send("You are not in a voice channel.")
@@ -240,17 +240,40 @@ async def jarvis_play(ctx, *, query):
         await ctx.send("Error playing the song.")
         print(e)
         
+@bot.command()
+async def skip(ctx):
+
+    vc = ctx.voice_client
+
+    if not vc:
+        await ctx.send("I'm not in a voice channel.")
+        return
+
+    if not vc.is_playing():
+        await ctx.send("Nothing is playing.")
+        return
+
+    vc.stop()  
+
+    await ctx.send("Skipped the current song.")
+            
+@bot.command()        
 async def play_next(ctx):
 
     global is_playing
+
+    vc = ctx.voice_client
+
+    if not vc:
+        return
+    if vc.is_playing():
+        return
 
     if len(song_queue) > 0:
 
         is_playing = True
 
         url, title = song_queue.pop(0)
-
-        vc = ctx.voice_client
 
         vc.play(
             discord.FFmpegPCMAudio(url, **ffmpeg_options),
@@ -260,6 +283,6 @@ async def play_next(ctx):
         await ctx.send(f"Now playing: {title}")
 
     else:
-        is_playing = False     
+        is_playing = False 
            
 bot.run(BOT_TOKEN)
