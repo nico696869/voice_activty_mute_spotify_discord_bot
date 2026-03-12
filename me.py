@@ -241,7 +241,7 @@ async def jarvis_play(ctx, *, query):
         print(e)
         
 @bot.command()
-async def skip(ctx):
+async def jarvis_skip(ctx):
 
     vc = ctx.voice_client
 
