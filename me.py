@@ -1,3 +1,5 @@
+from turtle import title
+
 from dotenv import load_dotenv
 from discord.ext import commands
 import discord
@@ -14,11 +16,11 @@ import random
 
 last_speech_time = 0
 spotify_muted = False
-SILENCE_DELAY = 2
-song_queue = []
+SILENCE_DELAY = 0.5
+song_queue = {}
 global listening
 listening = False
-is_playing = False
+is_playing = {}
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -47,8 +49,11 @@ intents.message_content = True
 intents.members = True
 intents.voice_states = True
 
-bot = commands.Bot(command_prefix='!', intents=intents)
-
+bot = commands.AutoShardedBot(
+    command_prefix="!",
+    intents=intents,
+    shard_count = 5
+)
 speaking_users = set()
 
 class VoiceReceiver(voice_recv.AudioSink):
@@ -215,21 +220,21 @@ async def clear(ctx, amount: int):
 @bot.command()
 async def jarvis_play(ctx, *, query):
 
-    global is_playing
-
     if not ctx.author.voice:
         await ctx.send("You must be in a voice channel.")
         return
 
-    if ctx.voice_client is None:
-        await ctx.author.voice.channel.connect()
-
     vc = ctx.voice_client
+    if vc is None:
+        vc = await ctx.author.voice.channel.connect()
 
     try:
+        loop = asyncio.get_running_loop()
 
-        loop = asyncio.get_event_loop()
-        info = await loop.run_in_executor(None, lambda: ytdl.extract_info(query, download=False))
+        info = await loop.run_in_executor(
+            None,
+            lambda: ytdl.extract_info(query, download=False)
+        )
 
         if "entries" in info:
             info = info["entries"][0]
@@ -237,11 +242,16 @@ async def jarvis_play(ctx, *, query):
         url = info["url"]
         title = info["title"]
 
-        song_queue.append((url, title))
+        guild_id = ctx.guild.id
+
+        if guild_id not in song_queue:
+            song_queue[guild_id] = []
+
+        song_queue[guild_id].append((url, title))
 
         await ctx.send(f"Added to queue: {title}")
 
-        if not is_playing:
+        if not is_playing.get(guild_id, False):
             await play_next(ctx)
 
     except Exception as e:
@@ -277,13 +287,15 @@ async def play_next(ctx):
     if vc.is_playing():
         return
 
-    if len(song_queue) == 0:
-        is_playing = False
+    guild_id = ctx.guild.id
+
+    if guild_id not in song_queue or len(song_queue[guild_id]) == 0:
+        is_playing[guild_id] = False
         return
 
-    is_playing = True
+    is_playing[guild_id] = True
 
-    url, title = song_queue.pop(0)
+    url, title = song_queue[guild_id].pop(0)
 
     try:
 
@@ -322,19 +334,16 @@ async def play_next(ctx):
 @bot.command()
 async def jarvis_peak(ctx):
 
-    global is_playing
-
     if not ctx.author.voice:
         await ctx.send("You must be in a voice channel.")
         return
 
-    if ctx.voice_client is None:
-        await ctx.author.voice.channel.connect()
-
     vc = ctx.voice_client
+    if vc is None:
+        vc = await ctx.author.voice.channel.connect()
 
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         # Search videos from the channel
         info = await loop.run_in_executor(
@@ -351,11 +360,16 @@ async def jarvis_peak(ctx):
         url = f"https://www.youtube.com/watch?v={video['id']}"
         title = video["title"]
 
-        song_queue.append((url, title))
+        guild_id = ctx.guild.id
+
+        if guild_id not in song_queue:
+            song_queue[guild_id] = []
+
+        song_queue[guild_id].append((url, title))
 
         await ctx.send(f"Jarvis found peak: **{title}**")
 
-        if not is_playing:
+        if not is_playing.get(guild_id, False):
             await play_next(ctx)
 
     except Exception as e:
