@@ -1,5 +1,4 @@
 from turtle import title
-
 from dotenv import load_dotenv
 from discord.ext import commands
 import discord
